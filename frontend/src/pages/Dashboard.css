@@ -1,0 +1,94 @@
+.revenue-amount {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--success-color);
+  margin-top: 1rem;
+}
+
+.expense-amount {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--danger-color);
+  margin-top: 1rem;
+}
+
+.alerts-card {
+  background-color: #fef3c7;
+  border-left: 4px solid var(--warning-color);
+}
+
+.alerts-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #92400e;
+  margin-bottom: 1rem;
+}
+
+.alerts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.alert-item {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  transition: all 0.3s;
+}
+
+.alert-warning {
+  background-color: white;
+  color: #92400e;
+}
+
+.alert-info {
+  background-color: white;
+  color: #1e40af;
+}
+
+.alert-item:hover {
+  transform: translateX(5px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.activity-list {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.activity-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background-color: #f9fafb;
+  border-radius: 0.5rem;
+}
+
+.activity-item strong {
+  display: block;
+  color: var(--dark-color);
+  margin-bottom: 0.25rem;
+}
+
+.activity-item p {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.activity-item .amount {
+  font-weight: 700;
+  color: var(--success-color);
+}
+
+.no-data {
+  text-align: center;
+  color: #6b7280;
+  padding: 2rem;
+  margin: 0;
+}

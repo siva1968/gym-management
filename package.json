@@ -1,0 +1,32 @@
+{
+  "name": "elite-arena-gym",
+  "version": "1.0.0",
+  "description": "Complete Gym Management System for Elite Arena Gym",
+  "main": "server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js",
+    "client": "cd frontend && npm start",
+    "dev:full": "concurrently \"npm run dev\" \"npm run client\""
+  },
+  "keywords": ["gym", "management", "fitness", "admin"],
+  "author": "Elite Arena Gym",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^8.0.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "qrcode": "^1.5.3",
+    "uuid": "^9.0.1",
+    "multer": "^1.4.5-lts.1",
+    "express-validator": "^7.0.1",
+    "moment": "^2.29.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "concurrently": "^8.2.2"
+  }
+}
