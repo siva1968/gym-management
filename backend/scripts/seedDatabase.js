@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const { sequelize, testConnection } = require('../config/database');
 const Member = require('../models/Member');
 const Trainer = require('../models/Trainer');
 const MembershipPlan = require('../models/MembershipPlan');
@@ -147,12 +147,12 @@ const generateSampleMembers = async (plans, trainers) => {
       weight: 60 + i * 3,
       height: 160 + i * 2,
       membershipType: plan.membershipType,
-      planId: plan._id,
+      planId: plan.id,
       startDate,
       endDate,
       totalFees: plan.price,
       paidAmount,
-      assignedTrainer: trainers[i % trainers.length]._id,
+      assignedTrainerId: trainers[i % trainers.length].id,
       qrCode,
       fitnessGoal: i % 2 === 0 ? 'Weight Loss' : 'Muscle Gain',
       status: new Date() > endDate ? 'expired' : 'active'
@@ -182,8 +182,8 @@ const generateSampleAttendance = async (members) => {
         checkOutTime.setMinutes(checkOutTime.getMinutes() + 60 + Math.floor(Math.random() * 90));
 
         attendance.push({
-          member: member._id,
-          memberId: member.memberId,
+          memberId: member.id,
+          memberIdString: member.memberId,
           memberName: member.name,
           date,
           checkInTime,
@@ -206,8 +206,8 @@ const generateSamplePayments = async (members) => {
     // Only create payments for members who have paid
     if (member.paidAmount > 0) {
       payments.push({
-        member: member._id,
-        memberId: member.memberId,
+        memberId: member.id,
+        memberIdString: member.memberId,
         memberName: member.name,
         amount: member.paidAmount,
         paymentDate: member.startDate,
@@ -268,45 +268,49 @@ const generateSampleExpenses = () => {
 
 const seedDatabase = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/elite-arena-gym');
+    await testConnection();
+    console.log('Connected to PostgreSQL');
 
-    console.log('Connected to MongoDB');
+    // Sync all models (create tables if they don't exist)
+    await sequelize.sync({ force: true });
+    console.log('Database synced (all tables created)');
+
     console.log('Clearing existing data...');
 
     // Clear existing data
-    await Member.deleteMany({});
-    await Trainer.deleteMany({});
-    await MembershipPlan.deleteMany({});
-    await Attendance.deleteMany({});
-    await Payment.deleteMany({});
-    await Expense.deleteMany({});
+    await Member.destroy({ where: {}, truncate: true, cascade: true });
+    await Trainer.destroy({ where: {}, truncate: true, cascade: true });
+    await MembershipPlan.destroy({ where: {}, truncate: true, cascade: true });
+    await Attendance.destroy({ where: {}, truncate: true, cascade: true });
+    await Payment.destroy({ where: {}, truncate: true, cascade: true });
+    await Expense.destroy({ where: {}, truncate: true, cascade: true });
 
     console.log('Creating sample membership plans...');
-    const plans = await MembershipPlan.insertMany(samplePlans);
+    const plans = await MembershipPlan.bulkCreate(samplePlans);
     console.log(`✓ Created ${plans.length} membership plans`);
 
     console.log('Creating sample trainers...');
-    const trainers = await Trainer.insertMany(sampleTrainers);
+    const trainers = await Trainer.bulkCreate(sampleTrainers);
     console.log(`✓ Created ${trainers.length} trainers`);
 
     console.log('Creating sample members...');
     const memberData = await generateSampleMembers(plans, trainers);
-    const members = await Member.insertMany(memberData);
+    const members = await Member.bulkCreate(memberData);
     console.log(`✓ Created ${members.length} members`);
 
     console.log('Creating sample attendance records...');
     const attendanceData = await generateSampleAttendance(members);
-    const attendance = await Attendance.insertMany(attendanceData);
+    const attendance = await Attendance.bulkCreate(attendanceData);
     console.log(`✓ Created ${attendance.length} attendance records`);
 
     console.log('Creating sample payments...');
     const paymentData = await generateSamplePayments(members);
-    const payments = await Payment.insertMany(paymentData);
+    const payments = await Payment.bulkCreate(paymentData);
     console.log(`✓ Created ${payments.length} payment records`);
 
     console.log('Creating sample expenses...');
     const expenseData = generateSampleExpenses();
-    const expenses = await Expense.insertMany(expenseData);
+    const expenses = await Expense.bulkCreate(expenseData);
     console.log(`✓ Created ${expenses.length} expense records`);
 
     console.log('\n✅ Database seeded successfully!');
@@ -318,6 +322,7 @@ const seedDatabase = async () => {
     console.log(`- Payments: ${payments.length}`);
     console.log(`- Expenses: ${expenses.length}`);
 
+    await sequelize.close();
     process.exit(0);
   } catch (error) {
     console.error('Error seeding database:', error);

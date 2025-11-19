@@ -1,112 +1,110 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const trainerSchema = new mongoose.Schema({
+const Trainer = sequelize.define('Trainer', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   trainerId: {
-    type: String,
+    type: DataTypes.STRING,
     unique: true,
-    required: true
+    allowNull: false
   },
   name: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   email: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
-    lowercase: true,
-    trim: true
+    validate: {
+      isEmail: true
+    }
   },
   phone: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   dateOfBirth: {
-    type: Date
+    type: DataTypes.DATEONLY
   },
   gender: {
-    type: String,
-    enum: ['male', 'female', 'other']
+    type: DataTypes.ENUM('male', 'female', 'other')
   },
   address: {
-    street: String,
-    city: String,
-    state: String,
-    pincode: String
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
   // Professional details
-  specialization: [{
-    type: String,
-    enum: ['Strength Training', 'Cardio', 'Yoga', 'CrossFit', 'Nutrition', 'Physiotherapy', 'Personal Training']
-  }],
-  experience: {
-    type: Number,
-    min: 0
+  specialization: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: []
   },
-  certifications: [{
-    name: String,
-    issuedBy: String,
-    issueDate: Date,
-    expiryDate: Date
-  }],
+  experience: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    validate: {
+      min: 0
+    }
+  },
+  certifications: {
+    type: DataTypes.JSONB,
+    defaultValue: []
+  },
   // Employment details
   joiningDate: {
-    type: Date,
-    required: true
+    type: DataTypes.DATEONLY,
+    allowNull: false
   },
   employmentType: {
-    type: String,
-    enum: ['full-time', 'part-time', 'contract'],
-    default: 'full-time'
+    type: DataTypes.ENUM('full-time', 'part-time', 'contract'),
+    defaultValue: 'full-time'
   },
   // Shift timings
   shiftTimings: {
-    startTime: String,
-    endTime: String,
-    workingDays: [String]
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
   // Salary details
   salaryType: {
-    type: String,
-    enum: ['fixed', 'commission', 'mixed'],
-    default: 'fixed'
+    type: DataTypes.ENUM('fixed', 'commission', 'mixed'),
+    defaultValue: 'fixed'
   },
   baseSalary: {
-    type: Number,
-    default: 0
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0
   },
   commissionRate: {
-    type: Number,
-    default: 0,
-    min: 0,
-    max: 100
+    type: DataTypes.DECIMAL(5, 2),
+    defaultValue: 0,
+    validate: {
+      min: 0,
+      max: 100
+    }
   },
-  // Assigned members
-  assignedMembers: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Member'
-  }],
   maxCapacity: {
-    type: Number,
-    default: 20
+    type: DataTypes.INTEGER,
+    defaultValue: 20
   },
   // Status
   isActive: {
-    type: Boolean,
-    default: true
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
   // Photo
   photo: {
-    type: String
+    type: DataTypes.STRING
   },
   // Bio
   bio: {
-    type: String
+    type: DataTypes.TEXT
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  tableName: 'trainers'
 });
 
-module.exports = mongoose.model('Trainer', trainerSchema);
+module.exports = Trainer;

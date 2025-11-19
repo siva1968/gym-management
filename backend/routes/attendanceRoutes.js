@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const Attendance = require('../models/Attendance');
 const Member = require('../models/Member');
 const { verifyToken } = require('../middleware/auth');
@@ -9,33 +11,41 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const { date, memberId, startDate, endDate, page = 1, limit = 100 } = req.query;
 
-    const query = {};
+    const where = {};
 
     if (date) {
       const selectedDate = new Date(date);
       const nextDate = new Date(selectedDate);
       nextDate.setDate(nextDate.getDate() + 1);
-      query.date = { $gte: selectedDate, $lt: nextDate };
+      where.date = { [Op.gte]: selectedDate, [Op.lt]: nextDate };
     }
 
     if (startDate && endDate) {
-      query.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+      where.date = {
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
     if (memberId) {
-      query.memberId = memberId;
+      where.memberId = memberId;
     }
 
-    const attendance = await Attendance.find(query)
-      .populate('member', 'name memberId phone membershipType')
-      .sort({ date: -1, checkInTime: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    const attendance = await Attendance.findAll({
+      where,
+      include: [
+        {
+          model: Member,
+          as: 'member',
+          attributes: ['name', 'memberId', 'phone', 'membershipType']
+        }
+      ],
+      order: [['date', 'DESC'], ['checkInTime', 'DESC']],
+      limit: parseInt(limit),
+      offset: (page - 1) * limit
+    });
 
-    const total = await Attendance.countDocuments(query);
+    const total = await Attendance.count({ where });
 
     res.json({
       success: true,
@@ -62,11 +72,19 @@ router.get('/today', verifyToken, async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const attendance = await Attendance.find({
-      date: { $gte: today, $lt: tomorrow }
-    })
-      .populate('member', 'name memberId phone')
-      .sort({ checkInTime: -1 });
+    const attendance = await Attendance.findAll({
+      where: {
+        date: { [Op.gte]: today, [Op.lt]: tomorrow }
+      },
+      include: [
+        {
+          model: Member,
+          as: 'member',
+          attributes: ['name', 'memberId', 'phone']
+        }
+      ],
+      order: [['checkInTime', 'DESC']]
+    });
 
     res.json({
       success: true,
@@ -87,8 +105,8 @@ router.post('/checkin', verifyToken, async (req, res) => {
   try {
     const { memberId, checkInMethod = 'manual', notes } = req.body;
 
-    // Find member by memberId (not MongoDB _id)
-    const member = await Member.findOne({ memberId });
+    // Find member by memberId (string field, not UUID)
+    const member = await Member.findOne({ where: { memberId } });
 
     if (!member) {
       return res.status(404).json({
@@ -120,8 +138,10 @@ router.post('/checkin', verifyToken, async (req, res) => {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const existingAttendance = await Attendance.findOne({
-      member: member._id,
-      date: { $gte: today, $lt: tomorrow }
+      where: {
+        memberId: member.id,
+        date: { [Op.gte]: today, [Op.lt]: tomorrow }
+      }
     });
 
     if (existingAttendance && !existingAttendance.checkOutTime) {
@@ -133,17 +153,15 @@ router.post('/checkin', verifyToken, async (req, res) => {
     }
 
     // Create attendance record
-    const attendance = new Attendance({
-      member: member._id,
-      memberId: member.memberId,
+    const attendance = await Attendance.create({
+      memberId: member.id,
+      memberIdString: member.memberId,
       memberName: member.name,
       date: new Date(),
       checkInTime: new Date(),
       checkInMethod,
       notes
     });
-
-    await attendance.save();
 
     res.status(201).json({
       success: true,
@@ -162,7 +180,7 @@ router.post('/checkin', verifyToken, async (req, res) => {
 // Check-out member
 router.post('/checkout/:id', verifyToken, async (req, res) => {
   try {
-    const attendance = await Attendance.findById(req.params.id);
+    const attendance = await Attendance.findByPk(req.params.id);
 
     if (!attendance) {
       return res.status(404).json({
@@ -178,8 +196,7 @@ router.post('/checkout/:id', verifyToken, async (req, res) => {
       });
     }
 
-    attendance.checkOutTime = new Date();
-    await attendance.save();
+    await attendance.update({ checkOutTime: new Date() });
 
     res.json({
       success: true,
@@ -198,7 +215,7 @@ router.post('/checkout/:id', verifyToken, async (req, res) => {
 // Get member attendance history
 router.get('/member/:memberId', verifyToken, async (req, res) => {
   try {
-    const member = await Member.findOne({ memberId: req.params.memberId });
+    const member = await Member.findOne({ where: { memberId: req.params.memberId } });
 
     if (!member) {
       return res.status(404).json({
@@ -207,9 +224,11 @@ router.get('/member/:memberId', verifyToken, async (req, res) => {
       });
     }
 
-    const attendance = await Attendance.find({ member: member._id })
-      .sort({ date: -1 })
-      .limit(100);
+    const attendance = await Attendance.findAll({
+      where: { memberId: member.id },
+      order: [['date', 'DESC']],
+      limit: 100
+    });
 
     res.json({
       success: true,
@@ -230,16 +249,22 @@ router.get('/stats', verifyToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const dateQuery = {};
+    const where = {};
     if (startDate && endDate) {
-      dateQuery.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+      where.date = {
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
-    const totalAttendance = await Attendance.countDocuments(dateQuery);
-    const uniqueMembers = await Attendance.distinct('member', dateQuery);
+    const totalAttendance = await Attendance.count({ where });
+
+    // Get unique members count
+    const uniqueMembers = await Attendance.findAll({
+      where,
+      attributes: [[sequelize.fn('DISTINCT', sequelize.col('memberId')), 'memberId']],
+      raw: true
+    });
 
     res.json({
       success: true,

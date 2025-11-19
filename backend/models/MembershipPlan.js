@@ -1,55 +1,59 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const membershipPlanSchema = new mongoose.Schema({
+const MembershipPlan = sequelize.define('MembershipPlan', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   name: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   description: {
-    type: String
+    type: DataTypes.TEXT
   },
   duration: {
-    value: {
-      type: Number,
-      required: true
-    },
-    unit: {
-      type: String,
-      enum: ['days', 'months', 'years'],
-      default: 'months'
-    }
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: { value: 1, unit: 'months' }
   },
   price: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
-  features: [{
-    type: String
-  }],
+  features: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: []
+  },
   membershipType: {
-    type: String,
-    enum: ['Strength', 'Strength + Cardio', 'Cardio', 'Personal Training', 'Group Classes'],
-    required: true
+    type: DataTypes.ENUM('Strength', 'Strength + Cardio', 'Cardio', 'Personal Training', 'Group Classes'),
+    allowNull: false
   },
   discount: {
-    type: Number,
-    default: 0,
-    min: 0,
-    max: 100
+    type: DataTypes.DECIMAL(5, 2),
+    defaultValue: 0,
+    validate: {
+      min: 0,
+      max: 100
+    }
   },
   isActive: {
-    type: Boolean,
-    default: true
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  tableName: 'membership_plans'
 });
 
-// Calculate final price after discount
-membershipPlanSchema.virtual('finalPrice').get(function() {
-  return this.price - (this.price * this.discount / 100);
-});
+// Instance method for final price calculation
+MembershipPlan.prototype.getFinalPrice = function() {
+  return parseFloat(this.price) - (parseFloat(this.price) * parseFloat(this.discount) / 100);
+};
 
-module.exports = mongoose.model('MembershipPlan', membershipPlanSchema);
+module.exports = MembershipPlan;

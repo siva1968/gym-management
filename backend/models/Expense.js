@@ -1,61 +1,70 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const expenseSchema = new mongoose.Schema({
+const Expense = sequelize.define('Expense', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   title: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   category: {
-    type: String,
-    enum: ['Rent', 'Equipment', 'Utilities', 'Salaries', 'Marketing', 'Maintenance', 'Supplies', 'Other'],
-    required: true
+    type: DataTypes.ENUM('Rent', 'Equipment', 'Utilities', 'Salaries', 'Marketing', 'Maintenance', 'Supplies', 'Other'),
+    allowNull: false
   },
   amount: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   date: {
-    type: Date,
-    required: true,
-    default: Date.now
+    type: DataTypes.DATEONLY,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   },
   paymentMethod: {
-    type: String,
-    enum: ['cash', 'upi', 'card', 'net-banking', 'cheque'],
-    required: true
+    type: DataTypes.ENUM('cash', 'upi', 'card', 'net-banking', 'cheque'),
+    allowNull: false
   },
   description: {
-    type: String
+    type: DataTypes.TEXT
   },
   receipt: {
-    type: String // File path for receipt image
+    type: DataTypes.STRING,
+    comment: 'File path for receipt image'
   },
   vendor: {
-    type: String
+    type: DataTypes.STRING
   },
   isRecurring: {
-    type: Boolean,
-    default: false
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
   recurringPeriod: {
-    type: String,
-    enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly']
+    type: DataTypes.ENUM('daily', 'weekly', 'monthly', 'quarterly', 'yearly')
   },
-  addedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+  addedById: {
+    type: DataTypes.UUID,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
   },
   notes: {
-    type: String
+    type: DataTypes.TEXT
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  tableName: 'expenses',
+  indexes: [
+    { fields: ['date'] },
+    { fields: ['category'] }
+  ]
 });
 
-// Index for faster date-based queries
-expenseSchema.index({ date: -1 });
-expenseSchema.index({ category: 1 });
-
-module.exports = mongoose.model('Expense', expenseSchema);
+module.exports = Expense;

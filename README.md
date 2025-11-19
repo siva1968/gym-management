@@ -1,6 +1,6 @@
 # Elite Arena Gym - Management System
 
-A comprehensive gym management system built with the MERN stack (MongoDB, Express.js, React, Node.js) for managing all aspects of a fitness center.
+A comprehensive gym management system built with PostgreSQL, Express.js, React, and Node.js for managing all aspects of a fitness center.
 
 ## Features
 
@@ -63,7 +63,7 @@ A comprehensive gym management system built with the MERN stack (MongoDB, Expres
 
 ### Backend
 - **Node.js** & **Express.js**: Server and API
-- **MongoDB** with **Mongoose**: Database (v8.x)
+- **PostgreSQL** with **Sequelize**: Database (ORM)
 - **JWT**: Authentication
 - **bcrypt**: Password hashing
 - **QRCode**: QR code generation
@@ -82,7 +82,7 @@ A comprehensive gym management system built with the MERN stack (MongoDB, Expres
 
 ### Prerequisites
 - Node.js (v14 or higher)
-- MongoDB (local or cloud instance)
+- PostgreSQL (v12 or higher)
 - npm or yarn
 
 ### Backend Setup
@@ -103,21 +103,37 @@ npm install
 cp .env.example .env
 ```
 
-4. Update the `.env` file with your configurations:
+4. Update the `.env` file with your PostgreSQL database configurations:
 ```env
 PORT=5000
-MONGODB_URI=mongodb://localhost:27017/elite-arena-gym
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=elite_arena_gym
+DB_USER=postgres
+DB_PASSWORD=postgres
 JWT_SECRET=your_super_secret_jwt_key
 ADMIN_EMAIL=admin@elitearena.com
 ADMIN_PASSWORD=Admin@123
 ```
 
-5. Create uploads directory:
+5. Create PostgreSQL database:
+```bash
+psql -U postgres
+CREATE DATABASE elite_arena_gym;
+\q
+```
+
+6. Create uploads directory:
 ```bash
 mkdir uploads
 ```
 
-6. Quick setup (creates admin + seeds database with sample data):
+7. Sync database (creates all tables):
+```bash
+node backend/scripts/syncDatabase.js
+```
+
+8. Quick setup (creates admin + seeds database with sample data):
 ```bash
 npm run setup
 ```
@@ -131,7 +147,7 @@ npm run create-admin
 npm run seed
 ```
 
-7. Start the backend server:
+9. Start the backend server:
 ```bash
 npm run dev
 ```
@@ -298,10 +314,11 @@ The sample data includes:
 ```
 gym-management/
 ├── backend/
-│   ├── models/          # Mongoose models
+│   ├── config/          # Database configuration
+│   ├── models/          # Sequelize models
 │   ├── routes/          # Express routes
-│   ├── middleware/      # Auth middleware
-│   ├── scripts/         # Utility scripts
+│   ├── middleware/      # Auth & validation middleware
+│   ├── scripts/         # Utility scripts (sync, seed, createAdmin)
 │   └── server.js        # Entry point
 ├── frontend/
 │   ├── public/          # Static files

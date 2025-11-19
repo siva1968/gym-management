@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const QRCode = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
+const { Op } = require('sequelize');
 const Member = require('../models/Member');
+const Trainer = require('../models/Trainer');
+const MembershipPlan = require('../models/MembershipPlan');
 const { verifyToken } = require('../middleware/auth');
 const { memberValidation } = require('../middleware/validation');
 
@@ -10,7 +13,7 @@ const { memberValidation } = require('../middleware/validation');
 const generateMemberId = async () => {
   const prefix = 'MEM';
   const year = new Date().getFullYear();
-  const count = await Member.countDocuments();
+  const count = await Member.count();
   return `${prefix}${year}${String(count + 1).padStart(4, '0')}`;
 };
 
@@ -19,25 +22,37 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const { status, membershipType, search, page = 1, limit = 50 } = req.query;
 
-    const query = {};
-    if (status) query.status = status;
-    if (membershipType) query.membershipType = membershipType;
+    const where = {};
+    if (status) where.status = status;
+    if (membershipType) where.membershipType = membershipType;
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { memberId: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } }
+      where[Op.or] = [
+        { name: { [Op.iLike]: `%${search}%` } },
+        { memberId: { [Op.iLike]: `%${search}%` } },
+        { phone: { [Op.iLike]: `%${search}%` } }
       ];
     }
 
-    const members = await Member.find(query)
-      .populate('assignedTrainer', 'name specialization')
-      .populate('planId', 'name price')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    const members = await Member.findAll({
+      where,
+      include: [
+        {
+          model: Trainer,
+          as: 'assignedTrainer',
+          attributes: ['name', 'specialization']
+        },
+        {
+          model: MembershipPlan,
+          as: 'plan',
+          attributes: ['name', 'price']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: (page - 1) * limit
+    });
 
-    const total = await Member.countDocuments(query);
+    const total = await Member.count({ where });
 
     res.json({
       success: true,
@@ -59,9 +74,20 @@ router.get('/', verifyToken, async (req, res) => {
 // Get member by ID
 router.get('/:id', verifyToken, async (req, res) => {
   try {
-    const member = await Member.findById(req.params.id)
-      .populate('assignedTrainer', 'name specialization phone email')
-      .populate('planId', 'name price duration');
+    const member = await Member.findByPk(req.params.id, {
+      include: [
+        {
+          model: Trainer,
+          as: 'assignedTrainer',
+          attributes: ['name', 'specialization', 'phone', 'email']
+        },
+        {
+          model: MembershipPlan,
+          as: 'plan',
+          attributes: ['name', 'price', 'duration']
+        }
+      ]
+    });
 
     if (!member) {
       return res.status(404).json({
@@ -91,8 +117,7 @@ router.post('/', verifyToken, memberValidation.create, async (req, res) => {
     // Calculate end date based on plan if planId is provided
     let endDate = req.body.endDate;
     if (req.body.planId && req.body.startDate) {
-      const MembershipPlan = require('../models/MembershipPlan');
-      const plan = await MembershipPlan.findById(req.body.planId);
+      const plan = await MembershipPlan.findByPk(req.body.planId);
 
       if (plan) {
         const startDate = new Date(req.body.startDate);
@@ -117,14 +142,12 @@ router.post('/', verifyToken, memberValidation.create, async (req, res) => {
     });
     const qrCode = await QRCode.toDataURL(qrData);
 
-    const member = new Member({
+    const member = await Member.create({
       ...req.body,
       memberId,
       qrCode,
       endDate
     });
-
-    await member.save();
 
     res.status(201).json({
       success: true,
@@ -143,11 +166,7 @@ router.post('/', verifyToken, memberValidation.create, async (req, res) => {
 // Update member
 router.put('/:id', verifyToken, memberValidation.update, async (req, res) => {
   try {
-    const member = await Member.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const member = await Member.findByPk(req.params.id);
 
     if (!member) {
       return res.status(404).json({
@@ -155,6 +174,8 @@ router.put('/:id', verifyToken, memberValidation.update, async (req, res) => {
         message: 'Member not found'
       });
     }
+
+    await member.update(req.body);
 
     res.json({
       success: true,
@@ -173,7 +194,7 @@ router.put('/:id', verifyToken, memberValidation.update, async (req, res) => {
 // Delete member
 router.delete('/:id', verifyToken, async (req, res) => {
   try {
-    const member = await Member.findByIdAndDelete(req.params.id);
+    const member = await Member.findByPk(req.params.id);
 
     if (!member) {
       return res.status(404).json({
@@ -181,6 +202,8 @@ router.delete('/:id', verifyToken, async (req, res) => {
         message: 'Member not found'
       });
     }
+
+    await member.destroy();
 
     res.json({
       success: true,
@@ -198,12 +221,15 @@ router.delete('/:id', verifyToken, async (req, res) => {
 // Get members with due fees
 router.get('/dues/pending', verifyToken, async (req, res) => {
   try {
-    const members = await Member.find({
-      $or: [
-        { paymentStatus: 'pending' },
-        { paymentStatus: 'overdue' }
-      ]
-    }).select('name memberId phone pendingAmount paymentStatus endDate');
+    const members = await Member.findAll({
+      where: {
+        [Op.or]: [
+          { paymentStatus: 'pending' },
+          { paymentStatus: 'overdue' }
+        ]
+      },
+      attributes: ['name', 'memberId', 'phone', 'pendingAmount', 'paymentStatus', 'endDate']
+    });
 
     res.json({
       success: true,
@@ -226,10 +252,13 @@ router.get('/expiring/soon', verifyToken, async (req, res) => {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
-    const members = await Member.find({
-      endDate: { $lte: futureDate, $gte: new Date() },
-      status: 'active'
-    }).select('name memberId phone email endDate membershipType');
+    const members = await Member.findAll({
+      where: {
+        endDate: { [Op.lte]: futureDate, [Op.gte]: new Date() },
+        status: 'active'
+      },
+      attributes: ['name', 'memberId', 'phone', 'email', 'endDate', 'membershipType']
+    });
 
     res.json({
       success: true,
@@ -249,7 +278,7 @@ router.get('/expiring/soon', verifyToken, async (req, res) => {
 router.post('/:id/renew', verifyToken, async (req, res) => {
   try {
     const { planId, startDate, totalFees } = req.body;
-    const member = await Member.findById(req.params.id);
+    const member = await Member.findByPk(req.params.id);
 
     if (!member) {
       return res.status(404).json({
@@ -258,9 +287,7 @@ router.post('/:id/renew', verifyToken, async (req, res) => {
       });
     }
 
-    // Load plan separately to avoid issues with virtual fields
-    const MembershipPlan = require('../models/MembershipPlan');
-    const plan = await MembershipPlan.findById(planId);
+    const plan = await MembershipPlan.findByPk(planId);
 
     if (!plan) {
       return res.status(404).json({
@@ -284,14 +311,14 @@ router.post('/:id/renew', verifyToken, async (req, res) => {
     // Calculate final price with discount
     const finalPrice = plan.price - (plan.price * plan.discount / 100);
 
-    member.planId = planId;
-    member.startDate = newStartDate;
-    member.endDate = newEndDate;
-    member.totalFees = totalFees || finalPrice;
-    member.paidAmount = 0;
-    member.status = 'active';
-
-    await member.save();
+    await member.update({
+      planId,
+      startDate: newStartDate,
+      endDate: newEndDate,
+      totalFees: totalFees || finalPrice,
+      paidAmount: 0,
+      status: 'active'
+    });
 
     res.json({
       success: true,

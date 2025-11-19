@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { Op } = require('sequelize');
 const Trainer = require('../models/Trainer');
 const Member = require('../models/Member');
 const { verifyToken, isOwnerOrManager } = require('../middleware/auth');
@@ -8,7 +9,7 @@ const { verifyToken, isOwnerOrManager } = require('../middleware/auth');
 const generateTrainerId = async () => {
   const prefix = 'TRN';
   const year = new Date().getFullYear();
-  const count = await Trainer.countDocuments();
+  const count = await Trainer.count();
   return `${prefix}${year}${String(count + 1).padStart(3, '0')}`;
 };
 
@@ -17,13 +18,21 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const { isActive, specialization } = req.query;
 
-    const query = {};
-    if (isActive !== undefined) query.isActive = isActive === 'true';
-    if (specialization) query.specialization = specialization;
+    const where = {};
+    if (isActive !== undefined) where.isActive = isActive === 'true';
+    if (specialization) where.specialization = { [Op.contains]: [specialization] };
 
-    const trainers = await Trainer.find(query)
-      .populate('assignedMembers', 'name memberId phone')
-      .sort({ createdAt: -1 });
+    const trainers = await Trainer.findAll({
+      where,
+      include: [
+        {
+          model: Member,
+          as: 'assignedMembers',
+          attributes: ['name', 'memberId', 'phone']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
 
     res.json({
       success: true,
@@ -42,8 +51,15 @@ router.get('/', verifyToken, async (req, res) => {
 // Get trainer by ID
 router.get('/:id', verifyToken, async (req, res) => {
   try {
-    const trainer = await Trainer.findById(req.params.id)
-      .populate('assignedMembers', 'name memberId phone membershipType');
+    const trainer = await Trainer.findByPk(req.params.id, {
+      include: [
+        {
+          model: Member,
+          as: 'assignedMembers',
+          attributes: ['name', 'memberId', 'phone', 'membershipType']
+        }
+      ]
+    });
 
     if (!trainer) {
       return res.status(404).json({
@@ -70,12 +86,10 @@ router.post('/', verifyToken, isOwnerOrManager, async (req, res) => {
   try {
     const trainerId = await generateTrainerId();
 
-    const trainer = new Trainer({
+    const trainer = await Trainer.create({
       ...req.body,
       trainerId
     });
-
-    await trainer.save();
 
     res.status(201).json({
       success: true,
@@ -94,11 +108,7 @@ router.post('/', verifyToken, isOwnerOrManager, async (req, res) => {
 // Update trainer
 router.put('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
   try {
-    const trainer = await Trainer.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const trainer = await Trainer.findByPk(req.params.id);
 
     if (!trainer) {
       return res.status(404).json({
@@ -106,6 +116,8 @@ router.put('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
         message: 'Trainer not found'
       });
     }
+
+    await trainer.update(req.body);
 
     res.json({
       success: true,
@@ -124,7 +136,7 @@ router.put('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
 // Delete trainer
 router.delete('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
   try {
-    const trainer = await Trainer.findByIdAndDelete(req.params.id);
+    const trainer = await Trainer.findByPk(req.params.id);
 
     if (!trainer) {
       return res.status(404).json({
@@ -134,10 +146,12 @@ router.delete('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
     }
 
     // Remove trainer assignment from members
-    await Member.updateMany(
-      { assignedTrainer: req.params.id },
-      { $unset: { assignedTrainer: 1 } }
+    await Member.update(
+      { assignedTrainerId: null },
+      { where: { assignedTrainerId: req.params.id } }
     );
+
+    await trainer.destroy();
 
     res.json({
       success: true,
@@ -155,8 +169,10 @@ router.delete('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
 // Assign member to trainer
 router.post('/:trainerId/assign/:memberId', verifyToken, async (req, res) => {
   try {
-    const trainer = await Trainer.findById(req.params.trainerId);
-    const member = await Member.findById(req.params.memberId);
+    const trainer = await Trainer.findByPk(req.params.trainerId, {
+      include: [{ model: Member, as: 'assignedMembers' }]
+    });
+    const member = await Member.findByPk(req.params.memberId);
 
     if (!trainer || !member) {
       return res.status(404).json({
@@ -166,22 +182,16 @@ router.post('/:trainerId/assign/:memberId', verifyToken, async (req, res) => {
     }
 
     // Check capacity
-    if (trainer.assignedMembers.length >= trainer.maxCapacity) {
+    const assignedCount = await Member.count({ where: { assignedTrainerId: trainer.id } });
+    if (assignedCount >= trainer.maxCapacity) {
       return res.status(400).json({
         success: false,
         message: 'Trainer has reached maximum capacity'
       });
     }
 
-    // Add member to trainer's assigned list
-    if (!trainer.assignedMembers.includes(member._id)) {
-      trainer.assignedMembers.push(member._id);
-      await trainer.save();
-    }
-
     // Update member's assigned trainer
-    member.assignedTrainer = trainer._id;
-    await member.save();
+    await member.update({ assignedTrainerId: trainer.id });
 
     res.json({
       success: true,
@@ -199,8 +209,8 @@ router.post('/:trainerId/assign/:memberId', verifyToken, async (req, res) => {
 // Remove member from trainer
 router.delete('/:trainerId/remove/:memberId', verifyToken, async (req, res) => {
   try {
-    const trainer = await Trainer.findById(req.params.trainerId);
-    const member = await Member.findById(req.params.memberId);
+    const trainer = await Trainer.findByPk(req.params.trainerId);
+    const member = await Member.findByPk(req.params.memberId);
 
     if (!trainer || !member) {
       return res.status(404).json({
@@ -209,15 +219,8 @@ router.delete('/:trainerId/remove/:memberId', verifyToken, async (req, res) => {
       });
     }
 
-    // Remove member from trainer's list
-    trainer.assignedMembers = trainer.assignedMembers.filter(
-      id => id.toString() !== member._id.toString()
-    );
-    await trainer.save();
-
     // Remove trainer from member
-    member.assignedTrainer = undefined;
-    await member.save();
+    await member.update({ assignedTrainerId: null });
 
     res.json({
       success: true,

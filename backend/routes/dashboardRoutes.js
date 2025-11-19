@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const Member = require('../models/Member');
 const Trainer = require('../models/Trainer');
 const Attendance = require('../models/Attendance');
@@ -20,66 +22,65 @@ router.get('/stats', verifyToken, async (req, res) => {
     const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
     // Total members
-    const totalMembers = await Member.countDocuments();
-    const activeMembers = await Member.countDocuments({ status: 'active' });
-    const expiredMembers = await Member.countDocuments({ status: 'expired' });
+    const totalMembers = await Member.count();
+    const activeMembers = await Member.count({ where: { status: 'active' } });
+    const expiredMembers = await Member.count({ where: { status: 'expired' } });
 
     // Members with pending dues
-    const pendingDues = await Member.countDocuments({
-      paymentStatus: { $in: ['pending', 'overdue'] }
+    const pendingDues = await Member.count({
+      where: {
+        paymentStatus: { [Op.in]: ['pending', 'overdue'] }
+      }
     });
 
     // Total trainers
-    const totalTrainers = await Trainer.countDocuments({ isActive: true });
+    const totalTrainers = await Trainer.count({ where: { isActive: true } });
 
     // Today's attendance
-    const todayAttendance = await Attendance.countDocuments({
-      date: { $gte: today, $lt: tomorrow }
+    const todayAttendance = await Attendance.count({
+      where: {
+        date: { [Op.gte]: today, [Op.lt]: tomorrow }
+      }
     });
 
     // This month's revenue
-    const monthRevenue = await Payment.aggregate([
-      {
-        $match: {
-          paymentDate: { $gte: startOfMonth, $lte: endOfMonth },
-          status: 'completed'
-        }
+    const monthRevenueResult = await Payment.findOne({
+      where: {
+        paymentDate: { [Op.gte]: startOfMonth, [Op.lte]: endOfMonth },
+        status: 'completed'
       },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$amount' }
-        }
-      }
-    ]);
+      attributes: [[sequelize.fn('SUM', sequelize.col('amount')), 'total']],
+      raw: true
+    });
 
     // This month's expenses
-    const monthExpenses = await Expense.aggregate([
-      {
-        $match: {
-          date: { $gte: startOfMonth, $lte: endOfMonth }
-        }
+    const monthExpensesResult = await Expense.findOne({
+      where: {
+        date: { [Op.gte]: startOfMonth, [Op.lte]: endOfMonth }
       },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$amount' }
-        }
-      }
-    ]);
+      attributes: [[sequelize.fn('SUM', sequelize.col('amount')), 'total']],
+      raw: true
+    });
 
     // New members this month
-    const newMembersThisMonth = await Member.countDocuments({
-      createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+    const newMembersThisMonth = await Member.count({
+      where: {
+        createdAt: { [Op.gte]: startOfMonth, [Op.lte]: endOfMonth }
+      }
     });
 
     // Expiring memberships in next 7 days
     const next7Days = new Date(today);
     next7Days.setDate(next7Days.getDate() + 7);
-    const expiringMemberships = await Member.countDocuments({
-      endDate: { $gte: today, $lte: next7Days },
-      status: 'active'
+    const expiringMemberships = await Member.count({
+      where: {
+        endDate: { [Op.gte]: today, [Op.lte]: next7Days },
+        status: 'active'
+      }
     });
+
+    const monthlyRevenue = parseFloat(monthRevenueResult?.total || 0);
+    const monthlyExpenses = parseFloat(monthExpensesResult?.total || 0);
 
     res.json({
       success: true,
@@ -97,9 +98,9 @@ router.get('/stats', verifyToken, async (req, res) => {
           today: todayAttendance
         },
         financials: {
-          monthlyRevenue: monthRevenue[0]?.total || 0,
-          monthlyExpenses: monthExpenses[0]?.total || 0,
-          profit: (monthRevenue[0]?.total || 0) - (monthExpenses[0]?.total || 0)
+          monthlyRevenue,
+          monthlyExpenses,
+          profit: monthlyRevenue - monthlyExpenses
         },
         alerts: {
           pendingDues,
@@ -120,24 +121,39 @@ router.get('/stats', verifyToken, async (req, res) => {
 router.get('/recent-activities', verifyToken, async (req, res) => {
   try {
     // Get recent payments
-    const recentPayments = await Payment.find()
-      .populate('member', 'name memberId')
-      .sort({ paymentDate: -1 })
-      .limit(5)
-      .select('memberName amount paymentDate paymentMethod');
+    const recentPayments = await Payment.findAll({
+      include: [
+        {
+          model: Member,
+          as: 'member',
+          attributes: ['name', 'memberId']
+        }
+      ],
+      order: [['paymentDate', 'DESC']],
+      limit: 5,
+      attributes: ['memberName', 'amount', 'paymentDate', 'paymentMethod']
+    });
 
     // Get recent members
-    const recentMembers = await Member.find()
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .select('name memberId membershipType createdAt');
+    const recentMembers = await Member.findAll({
+      order: [['createdAt', 'DESC']],
+      limit: 5,
+      attributes: ['name', 'memberId', 'membershipType', 'createdAt']
+    });
 
     // Get recent attendance
-    const recentAttendance = await Attendance.find()
-      .populate('member', 'name memberId')
-      .sort({ checkInTime: -1 })
-      .limit(10)
-      .select('memberName checkInTime checkOutTime');
+    const recentAttendance = await Attendance.findAll({
+      include: [
+        {
+          model: Member,
+          as: 'member',
+          attributes: ['name', 'memberId']
+        }
+      ],
+      order: [['checkInTime', 'DESC']],
+      limit: 10,
+      attributes: ['memberName', 'checkInTime', 'checkOutTime']
+    });
 
     res.json({
       success: true,

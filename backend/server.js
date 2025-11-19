@@ -1,7 +1,8 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const { sequelize, testConnection } = require('./config/database');
+const db = require('./models');
 
 // Load environment variables
 dotenv.config();
@@ -34,10 +35,20 @@ if (process.env.NODE_ENV === 'development') {
 // Static files for uploads
 app.use('/uploads', express.static('uploads'));
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/elite-arena-gym')
-.then(() => console.log('✅ MongoDB Connected Successfully'))
-.catch((err) => console.error('❌ MongoDB Connection Error:', err));
+// Database connection and sync
+(async () => {
+  try {
+    await testConnection();
+    console.log('✅ PostgreSQL Connected Successfully');
+
+    // Sync database (creates tables if they don't exist)
+    await sequelize.sync({ alter: process.env.NODE_ENV === 'development' });
+    console.log('✅ Database Synchronized');
+  } catch (err) {
+    console.error('❌ Database Connection Error:', err);
+    process.exit(1);
+  }
+})();
 
 // Routes
 app.use('/api/auth', authRoutes);

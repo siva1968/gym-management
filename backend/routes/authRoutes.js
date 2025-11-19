@@ -20,7 +20,7 @@ router.post('/register', verifyToken, isOwner, authValidation.register, async (r
     const { name, email, password, role, phone } = req.body;
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -29,7 +29,7 @@ router.post('/register', verifyToken, isOwner, authValidation.register, async (r
     }
 
     // Create new user
-    const user = new User({
+    const user = await User.create({
       name,
       email,
       password,
@@ -37,13 +37,11 @@ router.post('/register', verifyToken, isOwner, authValidation.register, async (r
       phone
     });
 
-    await user.save();
-
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role
@@ -64,7 +62,7 @@ router.post('/login', authValidation.login, async (req, res) => {
     const { email, password } = req.body;
 
     // Find user
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -94,14 +92,14 @@ router.post('/login', authValidation.login, async (req, res) => {
     await user.save();
 
     // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user.id);
 
     res.json({
       success: true,
       message: 'Login successful',
       token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -123,7 +121,7 @@ router.get('/me', verifyToken, async (req, res) => {
     res.json({
       success: true,
       user: {
-        id: req.user._id,
+        id: req.user.id,
         name: req.user.name,
         email: req.user.email,
         role: req.user.role,
@@ -143,7 +141,9 @@ router.get('/me', verifyToken, async (req, res) => {
 // Get all users (admin only)
 router.get('/users', verifyToken, isOwner, async (req, res) => {
   try {
-    const users = await User.find().select('-password');
+    const users = await User.findAll({
+      attributes: { exclude: ['password'] }
+    });
     res.json({
       success: true,
       count: users.length,
@@ -162,12 +162,8 @@ router.get('/users', verifyToken, isOwner, async (req, res) => {
 router.put('/users/:id', verifyToken, isOwner, async (req, res) => {
   try {
     const { name, email, role, phone, isActive } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { name, email, role, phone, isActive },
-      { new: true, runValidators: true }
-    ).select('-password');
 
+    const user = await User.findByPk(req.params.id);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -175,10 +171,17 @@ router.put('/users/:id', verifyToken, isOwner, async (req, res) => {
       });
     }
 
+    await user.update({ name, email, role, phone, isActive });
+
+    // Fetch updated user without password
+    const updatedUser = await User.findByPk(user.id, {
+      attributes: { exclude: ['password'] }
+    });
+
     res.json({
       success: true,
       message: 'User updated successfully',
-      user
+      user: updatedUser
     });
   } catch (error) {
     res.status(500).json({
@@ -192,7 +195,7 @@ router.put('/users/:id', verifyToken, isOwner, async (req, res) => {
 // Delete user
 router.delete('/users/:id', verifyToken, isOwner, async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findByPk(req.params.id);
 
     if (!user) {
       return res.status(404).json({
@@ -200,6 +203,8 @@ router.delete('/users/:id', verifyToken, isOwner, async (req, res) => {
         message: 'User not found'
       });
     }
+
+    await user.destroy();
 
     res.json({
       success: true,

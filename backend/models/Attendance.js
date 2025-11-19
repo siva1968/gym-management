@@ -1,59 +1,69 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const attendanceSchema = new mongoose.Schema({
-  member: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Member',
-    required: true
+const Attendance = sequelize.define('Attendance', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
   memberId: {
-    type: String,
-    required: true
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'members',
+      key: 'id'
+    }
+  },
+  memberIdString: {
+    type: DataTypes.STRING,
+    allowNull: false
   },
   memberName: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   date: {
-    type: Date,
-    required: true,
-    default: Date.now
+    type: DataTypes.DATEONLY,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   },
   checkInTime: {
-    type: Date,
-    required: true,
-    default: Date.now
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   },
   checkOutTime: {
-    type: Date
+    type: DataTypes.DATE
   },
   duration: {
-    type: Number, // in minutes
-    default: 0
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    comment: 'Duration in minutes'
   },
   checkInMethod: {
-    type: String,
-    enum: ['qr-code', 'manual', 'rfid'],
-    default: 'manual'
+    type: DataTypes.ENUM('qr-code', 'manual', 'rfid'),
+    defaultValue: 'manual'
   },
   notes: {
-    type: String
+    type: DataTypes.TEXT
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  tableName: 'attendances',
+  hooks: {
+    beforeSave: (attendance) => {
+      if (attendance.checkOutTime && attendance.checkInTime) {
+        const diff = new Date(attendance.checkOutTime) - new Date(attendance.checkInTime);
+        attendance.duration = Math.floor(diff / (1000 * 60));
+      }
+    }
+  },
+  indexes: [
+    { fields: ['memberId'] },
+    { fields: ['date'] },
+    { fields: ['memberIdString'] }
+  ]
 });
 
-// Calculate duration on checkout
-attendanceSchema.pre('save', function(next) {
-  if (this.checkOutTime && this.checkInTime) {
-    const diff = this.checkOutTime - this.checkInTime;
-    this.duration = Math.floor(diff / (1000 * 60)); // Convert to minutes
-  }
-  next();
-});
-
-// Index for faster queries
-attendanceSchema.index({ member: 1, date: 1 });
-attendanceSchema.index({ date: 1 });
-
-module.exports = mongoose.model('Attendance', attendanceSchema);
+module.exports = Attendance;

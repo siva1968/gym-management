@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { Op } = require('sequelize');
 const Expense = require('../models/Expense');
+const User = require('../models/User');
 const { verifyToken, isOwnerOrManager } = require('../middleware/auth');
 
 // Get all expenses
@@ -8,24 +10,32 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const { category, startDate, endDate, page = 1, limit = 50 } = req.query;
 
-    const query = {};
+    const where = {};
 
-    if (category) query.category = category;
+    if (category) where.category = category;
 
     if (startDate && endDate) {
-      query.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+      where.date = {
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
-    const expenses = await Expense.find(query)
-      .populate('addedBy', 'name')
-      .sort({ date: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    const expenses = await Expense.findAll({
+      where,
+      include: [
+        {
+          model: User,
+          as: 'addedBy',
+          attributes: ['name']
+        }
+      ],
+      order: [['date', 'DESC']],
+      limit: parseInt(limit),
+      offset: (page - 1) * limit
+    });
 
-    const total = await Expense.countDocuments(query);
+    const total = await Expense.count({ where });
 
     res.json({
       success: true,
@@ -47,8 +57,15 @@ router.get('/', verifyToken, async (req, res) => {
 // Get expense by ID
 router.get('/:id', verifyToken, async (req, res) => {
   try {
-    const expense = await Expense.findById(req.params.id)
-      .populate('addedBy', 'name');
+    const expense = await Expense.findByPk(req.params.id, {
+      include: [
+        {
+          model: User,
+          as: 'addedBy',
+          attributes: ['name']
+        }
+      ]
+    });
 
     if (!expense) {
       return res.status(404).json({
@@ -73,12 +90,10 @@ router.get('/:id', verifyToken, async (req, res) => {
 // Create expense
 router.post('/', verifyToken, isOwnerOrManager, async (req, res) => {
   try {
-    const expense = new Expense({
+    const expense = await Expense.create({
       ...req.body,
-      addedBy: req.user._id
+      addedById: req.user.id
     });
-
-    await expense.save();
 
     res.status(201).json({
       success: true,
@@ -97,11 +112,7 @@ router.post('/', verifyToken, isOwnerOrManager, async (req, res) => {
 // Update expense
 router.put('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
   try {
-    const expense = await Expense.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const expense = await Expense.findByPk(req.params.id);
 
     if (!expense) {
       return res.status(404).json({
@@ -109,6 +120,8 @@ router.put('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
         message: 'Expense not found'
       });
     }
+
+    await expense.update(req.body);
 
     res.json({
       success: true,
@@ -127,7 +140,7 @@ router.put('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
 // Delete expense
 router.delete('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
   try {
-    const expense = await Expense.findByIdAndDelete(req.params.id);
+    const expense = await Expense.findByPk(req.params.id);
 
     if (!expense) {
       return res.status(404).json({
@@ -135,6 +148,8 @@ router.delete('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
         message: 'Expense not found'
       });
     }
+
+    await expense.destroy();
 
     res.json({
       success: true,
@@ -154,22 +169,22 @@ router.get('/summary/stats', verifyToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const query = {};
+    const where = {};
 
     if (startDate && endDate) {
-      query.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+      where.date = {
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
-    const expenses = await Expense.find(query);
+    const expenses = await Expense.findAll({ where });
 
-    const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const totalExpenses = expenses.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
 
     const byCategory = {};
     expenses.forEach(expense => {
-      byCategory[expense.category] = (byCategory[expense.category] || 0) + expense.amount;
+      byCategory[expense.category] = (byCategory[expense.category] || 0) + parseFloat(expense.amount);
     });
 
     res.json({

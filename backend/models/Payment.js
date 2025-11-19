@@ -1,74 +1,89 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const paymentSchema = new mongoose.Schema({
-  member: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Member',
-    required: true
+const Payment = sequelize.define('Payment', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
   memberId: {
-    type: String,
-    required: true
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'members',
+      key: 'id'
+    }
+  },
+  memberIdString: {
+    type: DataTypes.STRING,
+    allowNull: false
   },
   memberName: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   amount: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   paymentDate: {
-    type: Date,
-    required: true,
-    default: Date.now
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   },
   paymentMethod: {
-    type: String,
-    enum: ['cash', 'upi', 'card', 'net-banking', 'cheque'],
-    required: true
+    type: DataTypes.ENUM('cash', 'upi', 'card', 'net-banking', 'cheque'),
+    allowNull: false
   },
   transactionId: {
-    type: String
+    type: DataTypes.STRING
   },
   planId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'MembershipPlan'
+    type: DataTypes.UUID,
+    references: {
+      model: 'membership_plans',
+      key: 'id'
+    }
   },
   description: {
-    type: String
+    type: DataTypes.TEXT
   },
   invoiceNumber: {
-    type: String,
+    type: DataTypes.STRING,
     unique: true
   },
   status: {
-    type: String,
-    enum: ['completed', 'pending', 'failed', 'refunded'],
-    default: 'completed'
+    type: DataTypes.ENUM('completed', 'pending', 'failed', 'refunded'),
+    defaultValue: 'completed'
   },
   notes: {
-    type: String
+    type: DataTypes.TEXT
   },
-  receivedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+  receivedById: {
+    type: DataTypes.UUID,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
   }
 }, {
-  timestamps: true
-});
-
-// Auto-generate invoice number
-paymentSchema.pre('save', async function(next) {
-  if (!this.invoiceNumber) {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const count = await mongoose.model('Payment').countDocuments();
-    this.invoiceNumber = `INV-${year}${month}-${String(count + 1).padStart(5, '0')}`;
+  timestamps: true,
+  tableName: 'payments',
+  hooks: {
+    beforeCreate: async (payment) => {
+      if (!payment.invoiceNumber) {
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const count = await Payment.count();
+        payment.invoiceNumber = `INV-${year}${month}-${String(count + 1).padStart(5, '0')}`;
+      }
+    }
   }
-  next();
 });
 
-module.exports = mongoose.model('Payment', paymentSchema);
+module.exports = Payment;

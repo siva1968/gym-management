@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const Member = require('../models/Member');
 const Attendance = require('../models/Attendance');
 const Payment = require('../models/Payment');
@@ -11,37 +13,37 @@ router.get('/income', verifyToken, async (req, res) => {
   try {
     const { startDate, endDate, groupBy = 'day' } = req.query;
 
-    const query = { status: 'completed' };
+    const where = { status: 'completed' };
 
     if (startDate && endDate) {
-      query.paymentDate = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+      where.paymentDate = {
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
-    let groupByFormat;
+    let dateFormat;
     if (groupBy === 'day') {
-      groupByFormat = { $dateToString: { format: '%Y-%m-%d', date: '$paymentDate' } };
+      dateFormat = sequelize.fn('DATE', sequelize.col('paymentDate'));
     } else if (groupBy === 'month') {
-      groupByFormat = { $dateToString: { format: '%Y-%m', date: '$paymentDate' } };
+      dateFormat = sequelize.fn('DATE_TRUNC', 'month', sequelize.col('paymentDate'));
     } else {
-      groupByFormat = { $dateToString: { format: '%Y', date: '$paymentDate' } };
+      dateFormat = sequelize.fn('DATE_TRUNC', 'year', sequelize.col('paymentDate'));
     }
 
-    const incomeData = await Payment.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: groupByFormat,
-          totalIncome: { $sum: '$amount' },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
+    const incomeData = await Payment.findAll({
+      where,
+      attributes: [
+        [dateFormat, 'period'],
+        [sequelize.fn('SUM', sequelize.col('amount')), 'totalIncome'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      group: [dateFormat],
+      order: [[dateFormat, 'ASC']],
+      raw: true
+    });
 
-    const totalIncome = incomeData.reduce((sum, item) => sum + item.totalIncome, 0);
+    const totalIncome = incomeData.reduce((sum, item) => sum + parseFloat(item.totalIncome), 0);
 
     res.json({
       success: true,
@@ -62,42 +64,35 @@ router.get('/attendance', verifyToken, async (req, res) => {
   try {
     const { startDate, endDate, groupBy = 'day' } = req.query;
 
-    const query = {};
+    const where = {};
 
     if (startDate && endDate) {
-      query.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+      where.date = {
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
-    let groupByFormat;
+    let dateFormat;
     if (groupBy === 'day') {
-      groupByFormat = { $dateToString: { format: '%Y-%m-%d', date: '$date' } };
+      dateFormat = sequelize.fn('DATE', sequelize.col('date'));
     } else if (groupBy === 'month') {
-      groupByFormat = { $dateToString: { format: '%Y-%m', date: '$date' } };
+      dateFormat = sequelize.fn('DATE_TRUNC', 'month', sequelize.col('date'));
     } else {
-      groupByFormat = { $dateToString: { format: '%Y', date: '$date' } };
+      dateFormat = sequelize.fn('DATE_TRUNC', 'year', sequelize.col('date'));
     }
 
-    const attendanceData = await Attendance.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: groupByFormat,
-          totalAttendance: { $sum: 1 },
-          uniqueMembers: { $addToSet: '$member' }
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          totalAttendance: 1,
-          uniqueMembers: { $size: '$uniqueMembers' }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
+    const attendanceData = await Attendance.findAll({
+      where,
+      attributes: [
+        [dateFormat, 'period'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'totalAttendance'],
+        [sequelize.fn('COUNT', sequelize.fn('DISTINCT', sequelize.col('memberId'))), 'uniqueMembers']
+      ],
+      group: [dateFormat],
+      order: [[dateFormat, 'ASC']],
+      raw: true
+    });
 
     res.json({
       success: true,
@@ -122,43 +117,49 @@ router.get('/retention', verifyToken, async (req, res) => {
     const endOfYear = new Date(targetYear, 11, 31, 23, 59, 59);
 
     // New members
-    const newMembers = await Member.countDocuments({
-      createdAt: { $gte: startOfYear, $lte: endOfYear }
+    const newMembers = await Member.count({
+      where: {
+        createdAt: { [Op.gte]: startOfYear, [Op.lte]: endOfYear }
+      }
     });
 
     // Renewed members
-    const renewedMembers = await Member.countDocuments({
-      startDate: { $gte: startOfYear, $lte: endOfYear },
-      createdAt: { $lt: startOfYear }
+    const renewedMembers = await Member.count({
+      where: {
+        startDate: { [Op.gte]: startOfYear, [Op.lte]: endOfYear },
+        createdAt: { [Op.lt]: startOfYear }
+      }
     });
 
     // Expired members
-    const expiredMembers = await Member.countDocuments({
-      endDate: { $gte: startOfYear, $lte: endOfYear },
-      status: 'expired'
+    const expiredMembers = await Member.count({
+      where: {
+        endDate: { [Op.gte]: startOfYear, [Op.lte]: endOfYear },
+        status: 'expired'
+      }
     });
 
     // Active members at year end
-    const activeMembers = await Member.countDocuments({
-      status: 'active',
-      endDate: { $gte: endOfYear }
+    const activeMembers = await Member.count({
+      where: {
+        status: 'active',
+        endDate: { [Op.gte]: endOfYear }
+      }
     });
 
     // Monthly breakdown
-    const monthlyData = await Member.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startOfYear, $lte: endOfYear }
-        }
+    const monthlyData = await Member.findAll({
+      where: {
+        createdAt: { [Op.gte]: startOfYear, [Op.lte]: endOfYear }
       },
-      {
-        $group: {
-          _id: { $month: '$createdAt' },
-          newMembers: { $sum: 1 }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
+      attributes: [
+        [sequelize.fn('EXTRACT', sequelize.literal('MONTH FROM "createdAt"')), 'month'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'newMembers']
+      ],
+      group: [sequelize.fn('EXTRACT', sequelize.literal('MONTH FROM "createdAt"'))],
+      order: [[sequelize.fn('EXTRACT', sequelize.literal('MONTH FROM "createdAt"')), 'ASC']],
+      raw: true
+    });
 
     res.json({
       success: true,
@@ -188,47 +189,43 @@ router.get('/profit-loss', verifyToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const query = {};
+    const paymentWhere = { status: 'completed' };
 
     if (startDate && endDate) {
-      query.paymentDate = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+      paymentWhere.paymentDate = {
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
     // Get total income
-    const incomeData = await Payment.aggregate([
-      { $match: { ...query, status: 'completed' } },
-      {
-        $group: {
-          _id: null,
-          totalIncome: { $sum: '$amount' }
-        }
-      }
-    ]);
+    const incomeResult = await Payment.findOne({
+      where: paymentWhere,
+      attributes: [[sequelize.fn('SUM', sequelize.col('amount')), 'totalIncome']],
+      raw: true
+    });
 
-    // Get total expenses
-    const expenseQuery = {};
+    // Get total expenses by category
+    const expenseWhere = {};
     if (startDate && endDate) {
-      expenseQuery.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+      expenseWhere.date = {
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
-    const expenseData = await Expense.aggregate([
-      { $match: expenseQuery },
-      {
-        $group: {
-          _id: '$category',
-          totalExpense: { $sum: '$amount' }
-        }
-      }
-    ]);
+    const expenseData = await Expense.findAll({
+      where: expenseWhere,
+      attributes: [
+        'category',
+        [sequelize.fn('SUM', sequelize.col('amount')), 'totalExpense']
+      ],
+      group: ['category'],
+      raw: true
+    });
 
-    const totalIncome = incomeData[0]?.totalIncome || 0;
-    const totalExpenses = expenseData.reduce((sum, item) => sum + item.totalExpense, 0);
+    const totalIncome = parseFloat(incomeResult?.totalIncome || 0);
+    const totalExpenses = expenseData.reduce((sum, item) => sum + parseFloat(item.totalExpense), 0);
     const profit = totalIncome - totalExpenses;
 
     res.json({
@@ -254,34 +251,34 @@ router.get('/profit-loss', verifyToken, async (req, res) => {
 router.get('/membership-stats', verifyToken, async (req, res) => {
   try {
     // Members by membership type
-    const byType = await Member.aggregate([
-      {
-        $group: {
-          _id: '$membershipType',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    const byType = await Member.findAll({
+      attributes: [
+        'membershipType',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      group: ['membershipType'],
+      raw: true
+    });
 
     // Members by status
-    const byStatus = await Member.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    const byStatus = await Member.findAll({
+      attributes: [
+        'status',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      group: ['status'],
+      raw: true
+    });
 
     // Members by payment status
-    const byPaymentStatus = await Member.aggregate([
-      {
-        $group: {
-          _id: '$paymentStatus',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    const byPaymentStatus = await Member.findAll({
+      attributes: [
+        'paymentStatus',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      group: ['paymentStatus'],
+      raw: true
+    });
 
     res.json({
       success: true,
