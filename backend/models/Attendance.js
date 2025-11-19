@@ -52,7 +52,15 @@ const Attendance = sequelize.define('Attendance', {
   timestamps: true,
   tableName: 'attendances',
   hooks: {
-    beforeSave: (attendance) => {
+    // Calculate duration on create
+    beforeCreate: (attendance) => {
+      if (attendance.checkOutTime && attendance.checkInTime) {
+        const diff = new Date(attendance.checkOutTime) - new Date(attendance.checkInTime);
+        attendance.duration = Math.floor(diff / (1000 * 60));
+      }
+    },
+    // beforeUpdate hook ensures duration calculation runs on checkout too
+    beforeUpdate: (attendance) => {
       if (attendance.checkOutTime && attendance.checkInTime) {
         const diff = new Date(attendance.checkOutTime) - new Date(attendance.checkInTime);
         attendance.duration = Math.floor(diff / (1000 * 60));

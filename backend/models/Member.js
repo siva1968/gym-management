@@ -135,7 +135,28 @@ const Member = sequelize.define('Member', {
   timestamps: true,
   tableName: 'members',
   hooks: {
-    beforeSave: (member) => {
+    // Helper function for calculations (DRY)
+    beforeCreate: (member) => {
+      // Calculate BMI
+      if (member.weight && member.height) {
+        const heightInMeters = member.height / 100;
+        member.bmi = (member.weight / (heightInMeters * heightInMeters)).toFixed(2);
+      }
+
+      // Calculate pending amount
+      member.pendingAmount = member.totalFees - member.paidAmount;
+
+      // Update payment status
+      if (member.pendingAmount <= 0) {
+        member.paymentStatus = 'paid';
+      } else if (new Date() > new Date(member.endDate)) {
+        member.paymentStatus = 'overdue';
+      } else {
+        member.paymentStatus = 'pending';
+      }
+    },
+    // beforeUpdate hook ensures calculations run on .update() too
+    beforeUpdate: (member) => {
       // Calculate BMI
       if (member.weight && member.height) {
         const heightInMeters = member.height / 100;

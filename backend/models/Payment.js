@@ -79,8 +79,17 @@ const Payment = sequelize.define('Payment', {
         const date = new Date();
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
-        const count = await Payment.count();
-        payment.invoiceNumber = `INV-${year}${month}-${String(count + 1).padStart(5, '0')}`;
+
+        // Create sequence if it doesn't exist (idempotent)
+        await sequelize.query(`
+          CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
+        `);
+
+        // Get next value atomically (race-condition-free)
+        const [results] = await sequelize.query(`SELECT nextval('invoice_number_seq') as num;`);
+        const num = results[0].num;
+
+        payment.invoiceNumber = `INV-${year}${month}-${String(num).padStart(5, '0')}`;
       }
     }
   }

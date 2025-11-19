@@ -1,16 +1,26 @@
 const express = require('express');
 const router = express.Router();
 const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const Trainer = require('../models/Trainer');
 const Member = require('../models/Member');
 const { verifyToken, isOwnerOrManager } = require('../middleware/auth');
 
-// Generate unique trainer ID
+// Generate unique trainer ID using PostgreSQL sequence (race-condition-free)
 const generateTrainerId = async () => {
   const prefix = 'TRN';
   const year = new Date().getFullYear();
-  const count = await Trainer.count();
-  return `${prefix}${year}${String(count + 1).padStart(3, '0')}`;
+
+  // Create sequence if it doesn't exist (idempotent)
+  await sequelize.query(`
+    CREATE SEQUENCE IF NOT EXISTS trainer_id_seq START 1;
+  `);
+
+  // Get next value atomically
+  const [results] = await sequelize.query(`SELECT nextval('trainer_id_seq') as num;`);
+  const num = results[0].num;
+
+  return `${prefix}${year}${String(num).padStart(3, '0')}`;
 };
 
 // Get all trainers
@@ -135,10 +145,13 @@ router.put('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
 
 // Delete trainer
 router.delete('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
+  const t = await sequelize.transaction();
+
   try {
-    const trainer = await Trainer.findByPk(req.params.id);
+    const trainer = await Trainer.findByPk(req.params.id, { transaction: t });
 
     if (!trainer) {
+      await t.rollback();
       return res.status(404).json({
         success: false,
         message: 'Trainer not found'
@@ -148,16 +161,20 @@ router.delete('/:id', verifyToken, isOwnerOrManager, async (req, res) => {
     // Remove trainer assignment from members
     await Member.update(
       { assignedTrainerId: null },
-      { where: { assignedTrainerId: req.params.id } }
+      { where: { assignedTrainerId: req.params.id } },
+      { transaction: t }
     );
 
-    await trainer.destroy();
+    await trainer.destroy({ transaction: t });
+
+    await t.commit();
 
     res.json({
       success: true,
       message: 'Trainer deleted successfully'
     });
   } catch (error) {
+    await t.rollback();
     res.status(500).json({
       success: false,
       message: 'Error deleting trainer',

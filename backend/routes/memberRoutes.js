@@ -3,18 +3,28 @@ const router = express.Router();
 const QRCode = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
 const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const Member = require('../models/Member');
 const Trainer = require('../models/Trainer');
 const MembershipPlan = require('../models/MembershipPlan');
 const { verifyToken } = require('../middleware/auth');
 const { memberValidation } = require('../middleware/validation');
 
-// Generate unique member ID
+// Generate unique member ID using PostgreSQL sequence (race-condition-free)
 const generateMemberId = async () => {
   const prefix = 'MEM';
   const year = new Date().getFullYear();
-  const count = await Member.count();
-  return `${prefix}${year}${String(count + 1).padStart(4, '0')}`;
+
+  // Create sequence if it doesn't exist (idempotent)
+  await sequelize.query(`
+    CREATE SEQUENCE IF NOT EXISTS member_id_seq START 1;
+  `);
+
+  // Get next value atomically
+  const [results] = await sequelize.query(`SELECT nextval('member_id_seq') as num;`);
+  const num = results[0].num;
+
+  return `${prefix}${year}${String(num).padStart(4, '0')}`;
 };
 
 // Get all members
@@ -276,20 +286,24 @@ router.get('/expiring/soon', verifyToken, async (req, res) => {
 
 // Renew membership
 router.post('/:id/renew', verifyToken, async (req, res) => {
+  const t = await sequelize.transaction();
+
   try {
     const { planId, startDate, totalFees } = req.body;
-    const member = await Member.findByPk(req.params.id);
+    const member = await Member.findByPk(req.params.id, { transaction: t });
 
     if (!member) {
+      await t.rollback();
       return res.status(404).json({
         success: false,
         message: 'Member not found'
       });
     }
 
-    const plan = await MembershipPlan.findByPk(planId);
+    const plan = await MembershipPlan.findByPk(planId, { transaction: t });
 
     if (!plan) {
+      await t.rollback();
       return res.status(404).json({
         success: false,
         message: 'Membership plan not found'
@@ -318,7 +332,9 @@ router.post('/:id/renew', verifyToken, async (req, res) => {
       totalFees: totalFees || finalPrice,
       paidAmount: 0,
       status: 'active'
-    });
+    }, { transaction: t });
+
+    await t.commit();
 
     res.json({
       success: true,
@@ -326,6 +342,7 @@ router.post('/:id/renew', verifyToken, async (req, res) => {
       member
     });
   } catch (error) {
+    await t.rollback();
     res.status(500).json({
       success: false,
       message: 'Error renewing membership',

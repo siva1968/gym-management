@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const Payment = require('../models/Payment');
 const Member = require('../models/Member');
 const MembershipPlan = require('../models/MembershipPlan');
@@ -126,7 +127,7 @@ router.get('/payments', verifyToken, async (req, res) => {
       include: [
         {
           model: Member,
-          as: 'member',
+          as: 'memberData',
           attributes: ['name', 'memberId', 'phone']
         },
         {
@@ -166,7 +167,7 @@ router.get('/payments/:id', verifyToken, async (req, res) => {
       include: [
         {
           model: Member,
-          as: 'member',
+          as: 'memberData',
           attributes: ['name', 'memberId', 'phone', 'email']
         },
         {
@@ -199,12 +200,15 @@ router.get('/payments/:id', verifyToken, async (req, res) => {
 
 // Create payment
 router.post('/payments', verifyToken, async (req, res) => {
+  const t = await sequelize.transaction();
+
   try {
     const { member: memberId, amount, paymentMethod, transactionId, description } = req.body;
 
-    const member = await Member.findByPk(memberId);
+    const member = await Member.findByPk(memberId, { transaction: t });
 
     if (!member) {
+      await t.rollback();
       return res.status(404).json({
         success: false,
         message: 'Member not found'
@@ -220,12 +224,14 @@ router.post('/payments', verifyToken, async (req, res) => {
       transactionId,
       description,
       receivedById: req.user.id
-    });
+    }, { transaction: t });
 
     // Update member's paid amount
     await member.update({
       paidAmount: parseFloat(member.paidAmount || 0) + parseFloat(amount)
-    });
+    }, { transaction: t });
+
+    await t.commit();
 
     res.status(201).json({
       success: true,
@@ -233,6 +239,7 @@ router.post('/payments', verifyToken, async (req, res) => {
       payment
     });
   } catch (error) {
+    await t.rollback();
     res.status(500).json({
       success: false,
       message: 'Error recording payment',

@@ -28,7 +28,7 @@ const memberValidation = {
     validate
   ],
   update: [
-    param('id').isMongoId().withMessage('Invalid member ID'),
+    param('id').isUUID(4).withMessage('Invalid member ID'),
     body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Name must be between 2-100 characters'),
     body('phone').optional().trim().matches(/^[0-9]{10}$/).withMessage('Phone must be 10 digits'),
     body('email').optional().trim().isEmail().withMessage('Invalid email format'),
@@ -52,7 +52,7 @@ const trainerValidation = {
 // Payment validation rules
 const paymentValidation = {
   create: [
-    body('member').notEmpty().withMessage('Member ID is required').isMongoId().withMessage('Invalid member ID'),
+    body('member').notEmpty().withMessage('Member ID is required').isUUID(4).withMessage('Invalid member ID'),
     body('amount').notEmpty().withMessage('Amount is required').isNumeric().withMessage('Amount must be a number').isFloat({ min: 1 }).withMessage('Amount must be at least 1'),
     body('paymentMethod').notEmpty().withMessage('Payment method is required').isIn(['cash', 'upi', 'card', 'net-banking', 'cheque']).withMessage('Invalid payment method'),
     validate

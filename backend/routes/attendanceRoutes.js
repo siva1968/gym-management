@@ -36,7 +36,7 @@ router.get('/', verifyToken, async (req, res) => {
       include: [
         {
           model: Member,
-          as: 'member',
+          as: 'memberData',
           attributes: ['name', 'memberId', 'phone', 'membershipType']
         }
       ],
@@ -79,7 +79,7 @@ router.get('/today', verifyToken, async (req, res) => {
       include: [
         {
           model: Member,
-          as: 'member',
+          as: 'memberData',
           attributes: ['name', 'memberId', 'phone']
         }
       ],

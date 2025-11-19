@@ -125,7 +125,7 @@ router.get('/recent-activities', verifyToken, async (req, res) => {
       include: [
         {
           model: Member,
-          as: 'member',
+          as: 'memberData',
           attributes: ['name', 'memberId']
         }
       ],
@@ -146,7 +146,7 @@ router.get('/recent-activities', verifyToken, async (req, res) => {
       include: [
         {
           model: Member,
-          as: 'member',
+          as: 'memberData',
           attributes: ['name', 'memberId']
         }
       ],
