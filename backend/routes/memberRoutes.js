@@ -4,6 +4,7 @@ const QRCode = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
 const Member = require('../models/Member');
 const { verifyToken } = require('../middleware/auth');
+const { memberValidation } = require('../middleware/validation');
 
 // Generate unique member ID
 const generateMemberId = async () => {
@@ -83,9 +84,31 @@ router.get('/:id', verifyToken, async (req, res) => {
 });
 
 // Create new member
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, memberValidation.create, async (req, res) => {
   try {
     const memberId = await generateMemberId();
+
+    // Calculate end date based on plan if planId is provided
+    let endDate = req.body.endDate;
+    if (req.body.planId && req.body.startDate) {
+      const MembershipPlan = require('../models/MembershipPlan');
+      const plan = await MembershipPlan.findById(req.body.planId);
+
+      if (plan) {
+        const startDate = new Date(req.body.startDate);
+        const calculatedEndDate = new Date(startDate);
+
+        if (plan.duration.unit === 'months') {
+          calculatedEndDate.setMonth(calculatedEndDate.getMonth() + plan.duration.value);
+        } else if (plan.duration.unit === 'days') {
+          calculatedEndDate.setDate(calculatedEndDate.getDate() + plan.duration.value);
+        } else if (plan.duration.unit === 'years') {
+          calculatedEndDate.setFullYear(calculatedEndDate.getFullYear() + plan.duration.value);
+        }
+
+        endDate = calculatedEndDate;
+      }
+    }
 
     // Generate QR code
     const qrData = JSON.stringify({
@@ -97,7 +120,8 @@ router.post('/', verifyToken, async (req, res) => {
     const member = new Member({
       ...req.body,
       memberId,
-      qrCode
+      qrCode,
+      endDate
     });
 
     await member.save();
@@ -117,7 +141,7 @@ router.post('/', verifyToken, async (req, res) => {
 });
 
 // Update member
-router.put('/:id', verifyToken, async (req, res) => {
+router.put('/:id', verifyToken, memberValidation.update, async (req, res) => {
   try {
     const member = await Member.findByIdAndUpdate(
       req.params.id,
@@ -234,8 +258,18 @@ router.post('/:id/renew', verifyToken, async (req, res) => {
       });
     }
 
+    // Load plan separately to avoid issues with virtual fields
+    const MembershipPlan = require('../models/MembershipPlan');
+    const plan = await MembershipPlan.findById(planId);
+
+    if (!plan) {
+      return res.status(404).json({
+        success: false,
+        message: 'Membership plan not found'
+      });
+    }
+
     // Calculate new end date based on plan duration
-    const plan = await require('../models/MembershipPlan').findById(planId);
     const newStartDate = new Date(startDate);
     const newEndDate = new Date(newStartDate);
 
@@ -247,10 +281,13 @@ router.post('/:id/renew', verifyToken, async (req, res) => {
       newEndDate.setFullYear(newEndDate.getFullYear() + plan.duration.value);
     }
 
+    // Calculate final price with discount
+    const finalPrice = plan.price - (plan.price * plan.discount / 100);
+
     member.planId = planId;
     member.startDate = newStartDate;
     member.endDate = newEndDate;
-    member.totalFees = totalFees || plan.finalPrice;
+    member.totalFees = totalFees || finalPrice;
     member.paidAmount = 0;
     member.status = 'active';
 

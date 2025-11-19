@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { dashboardAPI } from '../services/api';
+import { dashboardAPI, reportsAPI } from '../services/api';
 import { FiUsers, FiUserCheck, FiDollarSign, FiAlertCircle, FiCalendar, FiTrendingUp } from 'react-icons/fi';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { toast } from 'react-toastify';
 import './Dashboard.css';
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [activities, setActivities] = useState(null);
+  const [membershipStats, setMembershipStats] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
   useEffect(() => {
     fetchDashboardData();
@@ -16,9 +20,10 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const [statsRes, activitiesRes] = await Promise.all([
+      const [statsRes, activitiesRes, membershipStatsRes] = await Promise.all([
         dashboardAPI.getStats(),
-        dashboardAPI.getRecentActivities()
+        dashboardAPI.getRecentActivities(),
+        reportsAPI.getMembershipStats()
       ]);
 
       if (statsRes.data.success) {
@@ -27,6 +32,10 @@ const Dashboard = () => {
 
       if (activitiesRes.data.success) {
         setActivities(activitiesRes.data.activities);
+      }
+
+      if (membershipStatsRes.data.success) {
+        setMembershipStats(membershipStatsRes.data.stats);
       }
     } catch (error) {
       toast.error('Error fetching dashboard data');
@@ -121,6 +130,61 @@ const Dashboard = () => {
         </div>
       )}
 
+      {/* Charts */}
+      <div className="grid grid-2">
+        {membershipStats?.byType && (
+          <div className="card">
+            <h3>Membership Distribution by Type</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={membershipStats.byType.map(item => ({ name: item._id, value: item.count }))}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {membershipStats.byType.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {membershipStats?.byStatus && (
+          <div className="card">
+            <h3>Member Status Distribution</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={membershipStats.byStatus.map(item => ({ name: item._id, value: item.count }))}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {membershipStats.byStatus.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
       {/* Recent Activities */}
       <div className="grid grid-2">
         <div className="card">
@@ -133,7 +197,7 @@ const Dashboard = () => {
                     <strong>{payment.memberName}</strong>
                     <p>{new Date(payment.paymentDate).toLocaleDateString()}</p>
                   </div>
-                  <div className="amount">₹{payment.amount}</div>
+                  <div className="amount">₹{payment.amount?.toLocaleString()}</div>
                 </div>
               ))}
             </div>

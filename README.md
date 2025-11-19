@@ -38,23 +38,45 @@ A comprehensive gym management system built with the MERN stack (MongoDB, Expres
   - Membership statistics
   - Daily, weekly, monthly reports
 
+## Recent Improvements & Enhancements
+
+### Critical Bug Fixes
+- Fixed deprecated Mongoose connection options
+- Fixed MemberDetail page data fetching bug (memberId undefined)
+- Fixed member creation to auto-calculate end date from membership plan
+- Fixed membership renewal with proper plan price calculation
+
+### New Features
+- **Sample Data Seeder**: Quickly populate database with realistic test data
+- **Input Validation**: Comprehensive server-side validation using express-validator
+- **Enhanced Member Detail Page**: Now shows payment history and attendance records
+- **Dashboard Charts**: Visual analytics with pie charts for membership distribution
+- **Request Logging**: Development mode logging for easier debugging
+- **Automated End Date Calculation**: Smart date calculation based on membership plan duration
+
+### Scripts Added
+- `npm run setup`: One-command setup (creates admin + seeds database)
+- `npm run seed`: Populate database with sample data
+- `npm run create-admin`: Create default admin user
+
 ## Tech Stack
 
 ### Backend
 - **Node.js** & **Express.js**: Server and API
-- **MongoDB** with **Mongoose**: Database
+- **MongoDB** with **Mongoose**: Database (v8.x)
 - **JWT**: Authentication
 - **bcrypt**: Password hashing
 - **QRCode**: QR code generation
 - **Moment.js**: Date handling
+- **express-validator**: Input validation
 
 ### Frontend
-- **React**: UI library
-- **React Router**: Navigation
+- **React**: UI library (v18)
+- **React Router**: Navigation (v6)
 - **Axios**: API calls
 - **React Toastify**: Notifications
 - **React Icons**: Icons
-- **Recharts**: Charts and analytics
+- **Recharts**: Charts and analytics (Pie charts, Bar charts)
 
 ## Installation & Setup
 
@@ -95,9 +117,18 @@ ADMIN_PASSWORD=Admin@123
 mkdir uploads
 ```
 
-6. Create default admin user:
+6. Quick setup (creates admin + seeds database with sample data):
 ```bash
-node backend/scripts/createAdmin.js
+npm run setup
+```
+
+OR manually:
+```bash
+# Create admin user
+npm run create-admin
+
+# Seed database with sample data (optional)
+npm run seed
 ```
 
 7. Start the backend server:
@@ -140,6 +171,30 @@ After running the admin creation script:
 - **Password**: Admin@123
 
 **Important**: Change the default password after first login!
+
+## Quick Start with Sample Data
+
+To get started quickly with pre-populated sample data:
+
+```bash
+# Install dependencies
+npm install
+cd frontend && npm install && cd ..
+
+# Setup everything (admin + sample data)
+npm run setup
+
+# Run both backend and frontend
+npm run dev:full
+```
+
+The sample data includes:
+- 4 Membership plans
+- 3 Trainers
+- 10 Members (with varying payment statuses)
+- 30 days of attendance records
+- Payment history
+- 3 months of expense records
 
 ## API Endpoints
 

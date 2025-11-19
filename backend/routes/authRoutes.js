@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { verifyToken, isOwner } = require('../middleware/auth');
+const { authValidation } = require('../middleware/validation');
 
 // Generate JWT token
 const generateToken = (userId) => {
@@ -14,7 +15,7 @@ const generateToken = (userId) => {
 };
 
 // Register new user (admin only)
-router.post('/register', verifyToken, isOwner, async (req, res) => {
+router.post('/register', verifyToken, isOwner, authValidation.register, async (req, res) => {
   try {
     const { name, email, password, role, phone } = req.body;
 
@@ -58,7 +59,7 @@ router.post('/register', verifyToken, isOwner, async (req, res) => {
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', authValidation.login, async (req, res) => {
   try {
     const { email, password } = req.body;
 
