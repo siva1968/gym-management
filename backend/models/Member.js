@@ -1,157 +1,160 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const memberSchema = new mongoose.Schema({
+const Member = sequelize.define('Member', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   memberId: {
-    type: String,
+    type: DataTypes.STRING,
     unique: true,
-    required: true
+    allowNull: false
   },
   name: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   email: {
-    type: String,
-    trim: true,
-    lowercase: true
+    type: DataTypes.STRING,
+    validate: {
+      isEmail: true
+    }
   },
   phone: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   alternatePhone: {
-    type: String,
-    trim: true
+    type: DataTypes.STRING
   },
   dateOfBirth: {
-    type: Date
+    type: DataTypes.DATEONLY
   },
   age: {
-    type: Number
+    type: DataTypes.INTEGER
   },
   gender: {
-    type: String,
-    enum: ['male', 'female', 'other']
+    type: DataTypes.ENUM('male', 'female', 'other')
   },
+  // Address as JSONB
   address: {
-    street: String,
-    city: String,
-    state: String,
-    pincode: String
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
+  // Emergency contact as JSONB
   emergencyContact: {
-    name: String,
-    phone: String,
-    relationship: String
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
   // Physical details
   weight: {
-    type: Number,
-    unit: 'kg'
+    type: DataTypes.DECIMAL(5, 2)
   },
   height: {
-    type: Number,
-    unit: 'cm'
+    type: DataTypes.DECIMAL(5, 2)
   },
   bmi: {
-    type: Number
+    type: DataTypes.DECIMAL(4, 2)
   },
   // Membership details
   membershipType: {
-    type: String,
-    enum: ['Strength', 'Strength + Cardio', 'Cardio', 'Personal Training', 'Group Classes'],
-    required: true
+    type: DataTypes.ENUM('Strength', 'Strength + Cardio', 'Cardio', 'Personal Training', 'Group Classes'),
+    allowNull: false
   },
   planId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'MembershipPlan'
+    type: DataTypes.UUID,
+    references: {
+      model: 'membership_plans',
+      key: 'id'
+    }
   },
   startDate: {
-    type: Date,
-    required: true
+    type: DataTypes.DATEONLY,
+    allowNull: false
   },
   endDate: {
-    type: Date,
-    required: true
+    type: DataTypes.DATEONLY,
+    allowNull: false
   },
   isActive: {
-    type: Boolean,
-    default: true
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
   // Payment details
   totalFees: {
-    type: Number,
-    required: true
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false
   },
   paidAmount: {
-    type: Number,
-    default: 0
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0
   },
   pendingAmount: {
-    type: Number,
-    default: 0
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0
   },
   paymentStatus: {
-    type: String,
-    enum: ['paid', 'pending', 'overdue'],
-    default: 'pending'
+    type: DataTypes.ENUM('paid', 'pending', 'overdue'),
+    defaultValue: 'pending'
   },
   // Assigned trainer
-  assignedTrainer: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Trainer'
+  assignedTrainerId: {
+    type: DataTypes.UUID,
+    references: {
+      model: 'trainers',
+      key: 'id'
+    }
   },
-  // QR Code for attendance
+  // QR Code
   qrCode: {
-    type: String
+    type: DataTypes.TEXT
   },
   // Health info
   medicalConditions: {
-    type: String
+    type: DataTypes.TEXT
   },
   fitnessGoal: {
-    type: String
+    type: DataTypes.STRING
   },
   // Photo
   photo: {
-    type: String
+    type: DataTypes.STRING
   },
   // Notes
   notes: {
-    type: String
+    type: DataTypes.TEXT
   },
   // Status
   status: {
-    type: String,
-    enum: ['active', 'expired', 'frozen', 'cancelled'],
-    default: 'active'
+    type: DataTypes.ENUM('active', 'expired', 'frozen', 'cancelled'),
+    defaultValue: 'active'
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  tableName: 'members',
+  hooks: {
+    beforeSave: (member) => {
+      // Calculate BMI
+      if (member.weight && member.height) {
+        const heightInMeters = member.height / 100;
+        member.bmi = (member.weight / (heightInMeters * heightInMeters)).toFixed(2);
+      }
+
+      // Calculate pending amount
+      member.pendingAmount = member.totalFees - member.paidAmount;
+
+      // Update payment status
+      if (member.pendingAmount <= 0) {
+        member.paymentStatus = 'paid';
+      } else if (new Date() > new Date(member.endDate)) {
+        member.paymentStatus = 'overdue';
+      } else {
+        member.paymentStatus = 'pending';
+      }
+    }
+  }
 });
 
-// Calculate BMI
-memberSchema.pre('save', function(next) {
-  if (this.weight && this.height) {
-    const heightInMeters = this.height / 100;
-    this.bmi = (this.weight / (heightInMeters * heightInMeters)).toFixed(2);
-  }
-
-  // Calculate pending amount
-  this.pendingAmount = this.totalFees - this.paidAmount;
-
-  // Update payment status
-  if (this.pendingAmount <= 0) {
-    this.paymentStatus = 'paid';
-  } else if (new Date() > this.endDate) {
-    this.paymentStatus = 'overdue';
-  } else {
-    this.paymentStatus = 'pending';
-  }
-
-  next();
-});
-
-module.exports = mongoose.model('Member', memberSchema);
+module.exports = Member;
